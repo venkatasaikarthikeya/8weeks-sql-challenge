@@ -336,59 +336,54 @@ mysql> SELECT R.customer_id AS customer, COUNT(R.product_id) AS item_count, SUM(
 2 rows in set (0.01 sec)
 
 -- 9.  If each $1 spent equates to 10 points and sushi has a 2x points multiplier - how many points would each customer have?
-mysql> SELECT R.customer_id AS customer, SUM(R.points_earned) AS total_points_earned
-    -> FROM
-    ->     (
-    ->         SELECT
-    ->             S.customer_id, IF(M.product_name = 'sushi', M.price * 20, M.price * 10) AS points_earned
-    ->         FROM sales AS S INNER JOIN menu AS M
-    ->         ON S.product_id = M.product_id
-    ->     ) AS R
-    -> GROUP BY R.customer_id
-    -> ORDER BY customer;
-+----------+---------------------+
-| customer | total_points_earned |
-+----------+---------------------+
-| A        |                 860 |
-| B        |                 940 |
-| C        |                 360 |
-+----------+---------------------+
+mysql> WITH total_points_customers AS (
+    ->     SELECT
+    ->         S.customer_id, IF(M.product_name = 'sushi', M.price * 20, M.price * 10) AS points_earned
+    ->     FROM sales AS S INNER JOIN menu AS M
+    ->     ON S.product_id = M.product_id
+    -> )
+    -> SELECT customer_id, SUM(points_earned) AS total_points
+    -> FROM total_points_customers
+    -> GROUP BY customer_id
+    -> ORDER BY customer_id;
++-------------+--------------+
+| customer_id | total_points |
++-------------+--------------+
+| A           |          860 |
+| B           |          940 |
+| C           |          360 |
++-------------+--------------+
 3 rows in set (0.00 sec)
 
 -- 10. In the first week after a customer joins the program (including their join date) they earn 2x points on all items, not just sushi -
 --     how many points do customer A and B have at the end of January?
-mysql> SELECT B.customer_id AS customer, SUM(B.total_points_earned) AS points_earned
-    -> FROM
-    ->     (
+mysql> WITH
+    ->     subscribers AS (
+    ->         SELECT S.customer_id, S.order_date, S.product_id, M.join_date
+    ->         FROM sales AS S INNER JOIN members AS M
+    ->         ON S.customer_id = M.customer_id
+    ->     ),
+    ->     subscriber_points AS (
     ->         SELECT
-    ->             A.customer_id,
+    ->             S.customer_id,
     ->             CASE
-    ->                 WHEN A.order_date >= A.join_date AND A.order_date <= (A.join_date + 6) THEN A.price * 20
-    ->                 WHEN A.product_name = 'sushi' THEN A.price * 20
-    ->                 ELSE A.price * 10
-    ->             END AS total_points_earned
-    ->         FROM
-    ->             (
-    ->                 SELECT R.customer_id, R.join_date, R.order_date, M.product_name, M.price
-    ->                 FROM
-    ->                     (
-    ->                         SELECT S.customer_id, S.product_id, S.order_date, M.join_date
-    ->                         FROM sales AS S INNER JOIN members AS M
-    ->                         ON S.customer_id = M.customer_id
-    ->                     ) AS R
-    ->                     INNER JOIN
-    ->                     menu AS M
-    ->                 ON R.product_id = M.product_id
-    ->                 WHERE R.order_date < '2021-02-01'
-    ->             ) AS A
-    ->     ) AS B
-    -> GROUP BY B.customer_id
-    -> ORDER BY customer;
-+----------+---------------+
-| customer | points_earned |
-+----------+---------------+
-| A        |          1370 |
-| B        |           820 |
-+----------+---------------+
-2 rows in set (0.01 sec)
+    ->                 WHEN S.order_date >= S.join_date AND S.order_date <= (S.join_date + 6) THEN M.price * 20
+    ->                 WHEN M.product_name = 'sushi' THEN M.price * 20
+    ->                 ELSE M.price * 10
+    ->             END AS points
+    ->         FROM subscribers AS S INNER JOIN menu AS M
+    ->         ON S.product_id = M.product_id
+    ->         WHERE S.order_date < '2021-02-01'
+    ->     )
+    -> SELECT customer_id, SUM(points) AS points_offers
+    -> FROM subscriber_points
+    -> GROUP BY customer_id
+    -> ORDER BY customer_id;
++-------------+---------------+
+| customer_id | points_offers |
++-------------+---------------+
+| A           |          1370 |
+| B           |           820 |
++-------------+---------------+
+2 rows in set (0.00 sec)
 ```
